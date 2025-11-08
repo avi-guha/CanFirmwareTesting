@@ -124,11 +124,35 @@ void setup() {
   Serial.print("Listening on CAN ID 0x"); Serial.println((CAN_BASE_ID + RECEIVER_ID), HEX);
 
   SPI.begin();
+  
+  Serial.println("Resetting MCP2515...");
   mcp2515.reset();
+  delay(100);
+  
+  // Try 16MHz first, then 8MHz
   MCP2515::ERROR result = mcp2515.setBitrate(CAN_500KBPS, MCP_16MHZ);
-  if (result == MCP2515::ERROR_OK) Serial.println("✓ Bitrate set to 500kbps @ 16MHz"); else Serial.println("✗ Error setting bitrate");
+  if (result == MCP2515::ERROR_OK) {
+    Serial.println("✓ Bitrate set to 500kbps @ 16MHz");
+  } else {
+    Serial.println("✗ 16MHz failed, trying 8MHz...");
+    result = mcp2515.setBitrate(CAN_500KBPS, MCP_8MHZ);
+    if (result == MCP2515::ERROR_OK) {
+      Serial.println("✓ Bitrate set to 500kbps @ 8MHz");
+    } else {
+      Serial.println("✗ Error setting bitrate - check SPI wiring!");
+    }
+  }
+  
   result = mcp2515.setNormalMode();
-  if (result == MCP2515::ERROR_OK) Serial.println("✓ MCP2515 initialized successfully!"); else Serial.println("✗ Error: Check wiring!");
+  if (result == MCP2515::ERROR_OK) {
+    Serial.println("✓ MCP2515 in Normal mode");
+  } else {
+    Serial.println("✗ Error setting Normal mode!");
+  }
+  
+  Serial.println("\nDiagnostics:");
+  Serial.println("- Verify 120Ω termination resistor on this receiver");
+  Serial.println("- Check SPI wiring: CS=GPIO5, MOSI=23, MISO=19, SCK=18");
   Serial.println("Ready. Waiting for messages...\n");
 }
 

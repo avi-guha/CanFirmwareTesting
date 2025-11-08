@@ -110,6 +110,12 @@ static bool sendMessageTo(uint8_t targetId, const uint8_t* data, uint16_t len) {
 }
 
 static String readLineWithEcho() {
+  // Flush any leftover characters in the serial buffer
+  while (Serial.available()) {
+    Serial.read();
+    delay(1);
+  }
+  
   // Read character by character and echo back to user
   String line = "";
   while (true) {
@@ -125,10 +131,15 @@ static String readLineWithEcho() {
         continue;
       }
       
-      // Handle newline/carriage return
+      // Handle newline/carriage return - but only if we have some content
+      // or if the line is already being built
       if (c == '\n' || c == '\r') {
-        Serial.println(); // Move to next line
-        return line;
+        if (line.length() > 0 || c == '\r') {
+          Serial.println(); // Move to next line
+          return line;
+        }
+        // Ignore leading newlines
+        continue;
       }
       
       // Regular character - echo and append
@@ -162,14 +173,43 @@ void setup() {
   Serial.println("- Type any length message to send\n");
 
   SPI.begin();
+  
+  Serial.println("Resetting MCP2515...");
   mcp2515.reset();
+  delay(100);
+  
+  // Try 16MHz first, then 8MHz if that fails
   MCP2515::ERROR result = mcp2515.setBitrate(CAN_500KBPS, MCP_16MHZ);
-  if (result == MCP2515::ERROR_OK) Serial.println("✓ Bitrate set to 500kbps @ 16MHz");
-  else Serial.println("✗ Error setting bitrate");
+  if (result == MCP2515::ERROR_OK) {
+    Serial.println("✓ Bitrate set to 500kbps @ 16MHz");
+  } else {
+    Serial.println("✗ 16MHz failed, trying 8MHz...");
+    result = mcp2515.setBitrate(CAN_500KBPS, MCP_8MHZ);
+    if (result == MCP2515::ERROR_OK) {
+      Serial.println("✓ Bitrate set to 500kbps @ 8MHz");
+    } else {
+      Serial.println("✗ Error setting bitrate - check SPI wiring!");
+    }
+  }
 
   result = mcp2515.setNormalMode();
-  if (result == MCP2515::ERROR_OK) Serial.println("✓ MCP2515 initialized successfully!\n");
-  else Serial.println("✗ Error: Check wiring!\n");
+  if (result == MCP2515::ERROR_OK) {
+    Serial.println("✓ MCP2515 in Normal mode");
+  } else {
+    Serial.println("✗ Error setting Normal mode - check wiring!");
+  }
+  
+  // Optionally test in loopback mode first (for hardware verification)
+  // Uncomment the next 3 lines to test without needing a receiver connected:
+  // mcp2515.setLoopbackMode();
+  // Serial.println("⚠ Running in LOOPBACK mode (testing only - no CAN bus needed)");
+  
+  // Check if we can read back a register to verify SPI communication
+  Serial.println("\nDiagnostics:");
+  Serial.println("- Verify 120Ω termination resistors at BOTH ends of CAN bus");
+  Serial.println("- Verify at least one receiver is connected and powered");
+  Serial.println("- Check SPI wiring: CS=GPIO5, MOSI=23, MISO=19, SCK=18");
+  Serial.println();
 }
 
 void loop() {
