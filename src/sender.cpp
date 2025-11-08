@@ -30,18 +30,33 @@ static const uint8_t FRAME_MAGIC_CONT  = 0xCC;
 MCP2515 mcp2515(CAN_CS_PIN);
 
 static bool sendFrame(const struct can_frame &frm) {
-  MCP2515::ERROR r = mcp2515.sendMessage(const_cast<struct can_frame*>(&frm));
-  if (r != MCP2515::ERROR_OK) {
+  // Retry logic to handle TX busy
+  const int maxRetries = 50;
+  for (int attempt = 0; attempt < maxRetries; ++attempt) {
+    MCP2515::ERROR r = mcp2515.sendMessage(const_cast<struct can_frame*>(&frm));
+    
+    if (r == MCP2515::ERROR_OK) {
+      return true;
+    }
+    
+    if (r == MCP2515::ERROR_ALLTXBUSY) {
+      // Wait a bit and retry
+      delay(5);
+      continue;
+    }
+    
+    // Other errors are fatal
     Serial.print("✗ Send failed: ");
     switch(r) {
-      case MCP2515::ERROR_ALLTXBUSY: Serial.println("All TX buffers busy"); break;
       case MCP2515::ERROR_FAILINIT: Serial.println("Initialization failed"); break;
       case MCP2515::ERROR_FAILTX: Serial.println("Transmission failed"); break;
       default: Serial.println("Unknown error"); break;
     }
     return false;
   }
-  return true;
+  
+  Serial.println("✗ Send failed: TX buffers busy (timeout)");
+  return false;
 }
 
 static bool sendMessageTo(uint8_t targetId, const uint8_t* data, uint16_t len) {
@@ -74,6 +89,7 @@ static bool sendMessageTo(uint8_t targetId, const uint8_t* data, uint16_t len) {
   tx.can_dlc = 4 + firstChunk; // 4..8
   if (!sendFrame(tx)) return false;
   offset += firstChunk;
+  delay(10); // Give receiver time to process start frame
 
   // Continuation frames
   while (offset < len) {
@@ -87,24 +103,48 @@ static bool sendMessageTo(uint8_t targetId, const uint8_t* data, uint16_t len) {
     tx.can_dlc = 2 + chunk; // 2..8
     if (!sendFrame(tx)) return false;
     offset += chunk;
-    delay(2); // small pacing to avoid back-to-back saturation
+    delay(10); // Increased pacing to prevent TX buffer saturation
   }
 
   return true;
 }
 
-static String readLineBlocking() {
-  // Give users time to type; accept CR or LF line endings
-  Serial.setTimeout(120000); // 2 minutes
-  String line = Serial.readStringUntil('\n');
-  line.trim(); // remove trailing CR/LF/spaces
-  return line;
+static String readLineWithEcho() {
+  // Read character by character and echo back to user
+  String line = "";
+  while (true) {
+    if (Serial.available()) {
+      char c = Serial.read();
+      
+      // Handle backspace
+      if (c == '\b' || c == 127) {
+        if (line.length() > 0) {
+          line.remove(line.length() - 1);
+          Serial.print("\b \b"); // Erase character on screen
+        }
+        continue;
+      }
+      
+      // Handle newline/carriage return
+      if (c == '\n' || c == '\r') {
+        Serial.println(); // Move to next line
+        return line;
+      }
+      
+      // Regular character - echo and append
+      if (isPrintable(c)) {
+        Serial.print(c);
+        line += c;
+      }
+    }
+    delay(1);
+  }
 }
 
 static int readTargetIdBlocking() {
   while (true) {
     Serial.print("Enter target ID (1-5): ");
-    String s = readLineBlocking();
+    String s = readLineWithEcho();
     if (s.length() == 0) continue;
     int id = s.toInt();
     if (id >= 1 && id <= 5) return id;
@@ -134,21 +174,28 @@ void setup() {
 
 void loop() {
   const int target = readTargetIdBlocking();
-  Serial.println("Enter message text (newline to send):");
-  String msg = readLineBlocking();
+  Serial.print("Enter message text: ");
+  String msg = readLineWithEcho();
 
   // Convert to bytes
   const uint16_t len = (uint16_t)msg.length();
-  Serial.print("Sending "); Serial.print(len); Serial.print(" bytes to receiver "); Serial.println(target);
+  
+  if (len == 0) {
+    Serial.println("Empty message. Skipped.\n");
+    return;
+  }
+  
+  Serial.print("Sending "); Serial.print(len); Serial.print(" bytes to receiver "); Serial.print(target);
+  Serial.print(": \""); Serial.print(msg); Serial.println("\"");
 
   if (sendMessageTo((uint8_t)target, (const uint8_t*)msg.c_str(), len)) {
-    Serial.println("✓ Message sent\n");
+    Serial.println("✓ Message sent successfully\n");
   } else {
     Serial.println("✗ Failed to send message\n");
   }
 
   // Allow next command
-  delay(50);
+  delay(100);
 }
 
 #endif // ROLE_SENDER

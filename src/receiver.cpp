@@ -70,7 +70,12 @@ static void handleStartFrame(const struct can_frame &frm) {
   if (receivedLen >= expectedLen) {
     // Complete in one frame
     buffer[receivedLen] = '\0';
-    Serial.print("Complete message: "); Serial.println((char*)buffer);
+    Serial.println("\n┌─────────────────────────────────");
+    Serial.print("│ Receiver #"); Serial.print(RECEIVER_ID); Serial.println(" - Message Received:");
+    Serial.print("│ Length: "); Serial.print(expectedLen); Serial.println(" bytes");
+    Serial.println("├─────────────────────────────────");
+    Serial.print("│ "); Serial.println((char*)buffer);
+    Serial.println("└─────────────────────────────────\n");
     resetAssembly();
   }
 }
@@ -100,7 +105,12 @@ static void handleContFrame(const struct can_frame &frm) {
 
   if (receivedLen >= expectedLen) {
     buffer[receivedLen] = '\0';
-    Serial.print("Complete message: "); Serial.println((char*)buffer);
+    Serial.println("\n┌─────────────────────────────────");
+    Serial.print("│ Receiver #"); Serial.print(RECEIVER_ID); Serial.println(" - Message Received:");
+    Serial.print("│ Length: "); Serial.print(expectedLen); Serial.println(" bytes");
+    Serial.println("├─────────────────────────────────");
+    Serial.print("│ "); Serial.println((char*)buffer);
+    Serial.println("└─────────────────────────────────\n");
     resetAssembly();
   }
 }
